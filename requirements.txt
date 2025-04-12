@@ -1,0 +1,4 @@
+clickhouse-driver==0.2.6
+Flask==2.3.3
+Flask-CORS==4.0.0
+pandas==2.2.0 

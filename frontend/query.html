@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Myntra Logs - Advanced Query</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        .CodeMirror {
+            height: 150px;
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+        }
+        
+        .results-container {
+            max-height: 500px;
+            overflow: auto;
+        }
+        
+        .query-examples {
+            border-left: 3px solid #6c757d;
+            padding-left: 15px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3">Advanced Log Query</h1>
+            <a href="demo.html" class="btn btn-outline-secondary">Back to Logs Viewer</a>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Query Editor</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="query-form">
+                            <div class="mb-3">
+                                <label for="query-editor" class="form-label">SQL Query</label>
+                                <textarea id="query-editor" class="form-control" rows="5"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Execute Query</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Query Results</h5>
+                        <span id="result-count" class="badge bg-primary"></span>
+                    </div>
+                    <div class="card-body">
+                        <div id="loading" class="text-center d-none">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p>Executing query...</p>
+                        </div>
+                        <div id="results-container" class="results-container">
+                            <div id="results-table"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Example Queries</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="query-examples">
+                            <h6>Count logs by environment</h6>
+                            <pre class="bg-light p-2 rounded">SELECT env, count() as count
+FROM foo_service
+GROUP BY env
+ORDER BY count DESC</pre>
+                        </div>
+                        
+                        <div class="query-examples">
+                            <h6>Find error logs</h6>
+                            <pre class="bg-light p-2 rounded">SELECT ts, env, container_id, msg
+FROM foo_service
+WHERE msg LIKE '%error%'
+ORDER BY ts DESC
+LIMIT 100</pre>
+                        </div>
+                        
+                        <div class="query-examples">
+                            <h6>Logs per hour in the last day</h6>
+                            <pre class="bg-light p-2 rounded">SELECT 
+    toStartOfHour(ts) as hour,
+    count() as count
+FROM foo_service
+WHERE ts >= now() - INTERVAL 1 DAY
+GROUP BY hour
+ORDER BY hour</pre>
+                        </div>
+                        
+                        <div class="query-examples">
+                            <h6>Filter by specific container</h6>
+                            <pre class="bg-light p-2 rounded">SELECT ts, env, msg, _others['user_id'] as user_id
+FROM foo_service
+WHERE container_id = 'container_1'
+ORDER BY ts DESC
+LIMIT 50</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/sql/sql.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            const API_BASE_URL = "http://127.0.0.1:7000"; // Match with backend port
+            
+            // Initialize CodeMirror
+            const queryEditor = CodeMirror.fromTextArea(document.getElementById('query-editor'), {
+                mode: 'text/x-sql',
+                lineNumbers: true,
+                indentWithTabs: true,
+                smartIndent: true,
+                lineWrapping: true,
+                extraKeys: {"Ctrl-Space": "autocomplete"}
+            });
+            
+            // Set default query
+            queryEditor.setValue("SELECT ts, env, container_id, msg\nFROM foo_service\nORDER BY ts DESC\nLIMIT 100");
+            
+            // Handle click on example queries
+            $('.query-examples pre').on('click', function() {
+                queryEditor.setValue($(this).text());
+                queryEditor.focus();
+            });
+            
+            // Handle query form submission
+            $('#query-form').on('submit', function(e) {
+                e.preventDefault();
+                executeQuery(queryEditor.getValue());
+            });
+            
+            // Execute a SQL query
+            function executeQuery(query) {
+                // Show loading indicator
+                $('#loading').removeClass('d-none');
+                $('#results-table').empty();
+                
+                // Execute the query
+                $.ajax({
+                    url: API_BASE_URL + '/api/query',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ query: query }),
+                    success: function(data) {
+                        $('#loading').addClass('d-none');
+                        
+                        if (Array.isArray(data)) {
+                            // Show row count
+                            $('#result-count').text(`${data.length} rows`);
+                            
+                            if (data.length > 0) {
+                                displayResults(data);
+                            } else {
+                                $('#results-table').html('<p class="text-muted">No results found</p>');
+                            }
+                        } else if (data.error) {
+                            $('#results-table').html(`<div class="alert alert-danger">${data.error}</div>`);
+                        }
+                    },
+                    error: function(err) {
+                        $('#loading').addClass('d-none');
+                        $('#results-table').html(`<div class="alert alert-danger">Error executing query: ${err.responseJSON?.error || 'Unknown error'}</div>`);
+                    }
+                });
+            }
+            
+            // Display query results as a table
+            function displayResults(data) {
+                // Get column names from the first row
+                const columns = Object.keys(data[0]);
+                
+                // Build the HTML table
+                let tableHtml = '<table class="table table-striped table-bordered table-hover">';
+                
+                // Add header row
+                tableHtml += '<thead><tr>';
+                columns.forEach(col => {
+                    tableHtml += `<th>${col}</th>`;
+                });
+                tableHtml += '</tr></thead>';
+                
+                // Add data rows
+                tableHtml += '<tbody>';
+                data.forEach(row => {
+                    tableHtml += '<tr>';
+                    columns.forEach(col => {
+                        const value = row[col];
+                        
+                        // Format the value based on its type
+                        let displayValue;
+                        if (value === null) {
+                            displayValue = '<span class="text-muted">null</span>';
+                        } else if (typeof value === 'object') {
+                            displayValue = JSON.stringify(value);
+                        } else {
+                            displayValue = value;
+                        }
+                        
+                        tableHtml += `<td>${displayValue}</td>`;
+                    });
+                    tableHtml += '</tr>';
+                });
+                tableHtml += '</tbody></table>';
+                
+                // Add the table to the results container
+                $('#results-table').html(tableHtml);
+            }
+        });
+    </script>
+</body>
+</html> 
