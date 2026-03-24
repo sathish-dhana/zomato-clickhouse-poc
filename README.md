@@ -225,3 +225,4 @@ ORDER BY (env, trace_id, ts)
 ## References
 
 This POC is based on the Zomato blog article: [Building a cost-effective logging platform using Clickhouse for petabyte scale](https://blog.zomato.com/building-a-cost-effective-logging-platform-using-clickhouse-for-petabyte-scale) 
+Updated by Cursor.
